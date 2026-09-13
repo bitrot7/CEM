@@ -4,19 +4,26 @@ from ansys.aedt.core import Desktop
 import math
 import os
 
+# parabolic dish measurements
+# od radius of panel = 1.4m
+# radius of inner mounting ring = 0.11115
+# depth measured with string at deepest point = 0.1207m
+# f = (1.4 - 0.11115)**2 / (16*0.1207)
+# fD = f / 2.8
+
 # VARIABLES
-wg_radius = 95 # inner radius.
+wg_radius = 75 # inner radius.
 wg_height = 500
 wg_wall_thickness = 1
 design_freq = 1420e6
 c = 299792458.0  # Speed of light in m/s
 design_lambda = c / design_freq
 
-coax_pin_radius = 1.0 # center conductor radius mm
-coax_vaccum_radius = coax_pin_radius*2.30192 # vaccum dielectric inside coax radius.
-coax_gnd_radius = coax_vaccum_radius + 0.1 # 0.1 mm thick wall shield radius.
-coax_pin_len = 104.3-3 # center conductor length mm  OBSERVED AS BEST SO FAR. @95mm radius it looks like longer is better. 104.3 IS NOW BEST BY A LOT.
+
+
 coax_vacc_gnd_len = 40
+coax_pin_len = coax_vacc_gnd_len + ((design_lambda*0.22)*1e3) # center conductor length mm  OBSERVED AS BEST SO FAR. @95mm radius it looks like longer is better. 104.3 IS NOW BEST BY A LOT.
+print(f"CoaxPin length length: {coax_pin_len:.2f} mm")
 
 
 # return lambda_g in millimeters.
@@ -46,13 +53,24 @@ def calc_wg_wavelength():
 # tweak this boi.
 # okay so tweaking this down a little furhter here provided some of the best results.
 # 90.36634521569225
-probe_height = ((calc_wg_wavelength() / 4)+5) - 8
+# so once I thickened the probe to 3mm 62.5mm probe height started to broaden the response.  I think I was hitting a "resonant mode" before, super narrow notch.
+ 
+# 89.3
+probe_height = (calc_wg_wavelength() / 4)-4 #62 #((calc_wg_wavelength() / 4)+5) - 8
 
 
-start_offset = -40
-count = 25
-step = 5
-sweep_param = True # turn on and off.
+start_offset = -5
+count = 10
+step = 0.5
+sweep_param = False # turn on and off.
+
+# I think this one created a broadband response.
+# Running for probe_len 69.22335942253521
+# Running for probe height 97.36634521569225
+
+#Running for probe_len 71.22335942253521
+#Running for probe height 99.36634521569225
+
 # this is the main.
 # Explicitly pass your installed version (Example: 2024 R1)
 with Desktop(version="2025.2",student_version=True, non_graphical=False) as d:
@@ -62,15 +80,30 @@ with Desktop(version="2025.2",student_version=True, non_graphical=False) as d:
     hfss = Hfss()
 
     # CHOOSE VARIABLE TO MODIFY HERE.
+    coax_pin_radius = 1.0 # center conductor radius mm
 
     if sweep_param:
+        #Running for probe_len 86.44671884507042
+        #Running for probe height 85.36634521569225
         probe_height = probe_height + start_offset
         #coax_pin_len = coax_pin_len + start_offset
+        #wg_height = wg_height + start_offset
+        #coax_pin_radius = coax_pin_radius + start_offset # center conductor radius mm
+    else:
+        count = 1
+
+
 
     for idx in range(0, count):
 
+
+        coax_vaccum_radius = coax_pin_radius*2.30192 # vaccum dielectric inside coax radius.
+        coax_gnd_radius = coax_vaccum_radius + 0.1 # 0.1 mm thick wall shield radius.
+
         # CHANGE PRINT STATEMENT HERE:
-        # print("Running for probe_height " + str(probe_height))
+        #print("Running for coax_pin_radius " + str(coax_pin_radius))
+        # print("Running for wg_height " + str(wg_height))
+        print("Running for probe_len " + str(coax_pin_len))
         print("Running for probe height " + str(probe_height))
 
         # Delete all objects for fresh slate on this iteration.
@@ -114,6 +147,14 @@ with Desktop(version="2025.2",student_version=True, non_graphical=False) as d:
 
         # arbitrary scaling to make it thick enough to cut through wall.
         hfss.modeler.create_cylinder(orientation="X", origin=[-(wg_radius+wg_wall_thickness),0,probe_height],radius=(coax_vaccum_radius),height=wg_wall_thickness*3,name="sma_wg_hole",material="vaccuum") # hole for the sma center pin.
+
+        # we really need this vaccum on the end of the cylinder 
+        # this will become our radiation boundary, otherwise all empty space in the simulation is treated as PEC and the waveguide will reflect back into itself
+        # becoming a super High Q cavity filter.
+        # overlap slightly with edge of waveguide and make radius comfortably large.
+        space_vacc = hfss.modeler.create_cylinder(orientation="Z", origin=[0,0,wg_height-0.1],radius=wg_radius*5,height=wg_height,name="space_vacc",material="vaccum")
+        space_vacc.visible = False
+        hfss.assign_radiation_boundary_to_objects("space_vacc")
 
         # subtract walls from cavity to create hollow waveguide.
         hfss.modeler.subtract(
@@ -166,6 +207,8 @@ with Desktop(version="2025.2",student_version=True, non_graphical=False) as d:
         if sweep_param:
             probe_height = probe_height + step
             #coax_pin_len = coax_pin_len + step
+            #wg_height = wg_height + step
+            #coax_pin_radius = coax_pin_radius + step
 
 
         # sol_data = hfss.post.get_solution_data(
